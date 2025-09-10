@@ -6,6 +6,8 @@ description: Sheet Navigation System 要件定義（v1）
 ## 重要
 
 - **参考**：このプロジェクトではMotionを使うので、必ずdocs/motion-docs/フォルダにあるドキュメント群をこまめに参照してください。
+- **Todoタスク履歴**：docs/tasks.mdであなたの進捗を管理します。完了したタスクはdocs/tasks.mdで[x]に更新してください。Legend: [ ] todo · [~] in-progress · [x] done
+- **デバッグ作業**：UI操作はこまめにユーザーに動作確認を求めるようにしてください。コードを書き終えたら、私にUIの動作確認を求めてください。
 
 ## 0. 目的と範囲
 
