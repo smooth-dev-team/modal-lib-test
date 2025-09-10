@@ -37,6 +37,62 @@ export function panelDepth(p: PanelPath): number {
     return p.split("/").filter(Boolean).length;
 }
 
+// --- Utility helpers for panel path / history transitions
+export function splitPanelPath(p: PanelPath): string[] {
+    if (!p) return [];
+    return p.split("/").filter(Boolean);
+}
+
+/**
+ * Build the history stack for a jump to `p`.
+ * Example: 'main/a/b' -> ['main', 'main/a', 'main/a/b']
+ */
+export function buildStackFromPath(p: PanelPath): PanelPath[] {
+    const segs = splitPanelPath(p);
+    const out: PanelPath[] = [];
+    for (let i = 0; i < segs.length; i++) {
+        out.push(segs.slice(0, i + 1).join("/"));
+    }
+    if (out.length === 0 && p === "") return [""];
+    return out;
+}
+
+export type TransitionKind = "back" | "forward" | "fade" | "none";
+
+/**
+ * Determine transition direction between two panel paths following rules:
+ * - If `next` is a prefix of `prev` (can be reached by popping segments from prev) => back
+ * - Else if `prev` is a prefix of `next` (can be reached by popping segments from next) => forward
+ * - Else => fade
+ */
+export function determineTransition(
+    prev: PanelPath | null,
+    next: PanelPath | null
+): TransitionKind {
+    if (!prev || !next) return "none";
+    if (prev === next) return "none";
+    const prevSeg = splitPanelPath(prev);
+    const nextSeg = splitPanelPath(next);
+    const nextIsPrefixOfPrev =
+        nextSeg.length <= prevSeg.length &&
+        prevSeg.slice(0, nextSeg.length).join("/") === nextSeg.join("/");
+    if (nextIsPrefixOfPrev) return "back";
+    const prevIsPrefixOfNext =
+        prevSeg.length <= nextSeg.length &&
+        nextSeg.slice(0, prevSeg.length).join("/") === prevSeg.join("/");
+    if (prevIsPrefixOfNext) return "forward";
+    return "fade";
+}
+
+export function describeTransition(prev: PanelPath | null, next: PanelPath | null): string {
+    const kind = determineTransition(prev, next);
+    return [
+        `From: "${prev ?? "(null)"}"`,
+        `To:   "${next ?? "(null)"}"`,
+        `Transition kind: ${kind}`,
+    ].join("\n");
+}
+
 export function useSheetNavigation(modalId?: ModalId) {
     const router = useRouter();
     const pathname = usePathname();
@@ -72,10 +128,18 @@ export function useSheetNavigation(modalId?: ModalId) {
         [makeUrl, router]
     );
 
-    const goPanel = useCallback(
+    // Jump: rebuild stack to the full path segments and move cursor to last
+    const jumpTo = useCallback(
         (p: PanelPath) => {
             const m = effectiveModal;
             if (!m) return;
+            const next: HistoryState = {
+                stack: buildStackFromPath(p),
+                cursor: splitPanelPath(p).length - 1,
+            };
+            try {
+                sessionStorage.setItem(HISTORY_KEY_PREFIX + m, JSON.stringify(next));
+            } catch {}
             router.push(makeUrl(m, p), { scroll: false });
         },
         [effectiveModal, makeUrl, router]
@@ -130,17 +194,50 @@ export function useSheetNavigation(modalId?: ModalId) {
         return !!h && h.cursor < h.stack.length - 1;
     }, [effectiveModal]);
 
-    const goBack = useCallback(() => router.back(), [router]);
-    const goForward = useCallback(() => window.history.forward(), []);
+    // Step back/forward operate within the current stack by cursor movement
+    const goBack = useCallback(() => {
+        const m = effectiveModal;
+        if (!m) return;
+        const h = readHistory(m);
+        if (!h || h.cursor <= 0) return;
+        const nextCursor = h.cursor - 1;
+        const target = h.stack[nextCursor];
+        try {
+            sessionStorage.setItem(
+                HISTORY_KEY_PREFIX + m,
+                JSON.stringify({ stack: h.stack, cursor: nextCursor })
+            );
+        } catch {}
+        router.push(makeUrl(m, target), { scroll: false });
+    }, [effectiveModal, makeUrl, router]);
+
+    const goForward = useCallback(() => {
+        const m = effectiveModal;
+        if (!m) return;
+        const h = readHistory(m);
+        if (!h || h.cursor >= h.stack.length - 1) return;
+        const nextCursor = h.cursor + 1;
+        const target = h.stack[nextCursor];
+        try {
+            sessionStorage.setItem(
+                HISTORY_KEY_PREFIX + m,
+                JSON.stringify({ stack: h.stack, cursor: nextCursor })
+            );
+        } catch {}
+        router.push(makeUrl(m, target), { scroll: false });
+    }, [effectiveModal, makeUrl, router]);
 
     return {
         openSheet,
         closeSheet,
-        goPanel,
+        goPanel: jumpTo,
+        jumpTo,
         canGoBack,
         canGoForward,
         goBack,
         goForward,
         panelDepth,
+        describeTransition,
+        determineTransition,
     };
 }

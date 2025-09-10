@@ -79,18 +79,15 @@ export function useSheetHistory(modalId?: ModalId) {
             return;
         }
 
-        // If this change was caused by a popstate, sync cursor to existing entry
-        if (popStateFlag.current) {
+        // Sync cursor to existing entry if present (covers popstate and programmatic back/forward)
+        const foundIndex = current.stack.indexOf(effectivePanel);
+        if (foundIndex >= 0) {
             popStateFlag.current = false;
-            const i = current.stack.indexOf(effectivePanel);
-            if (i >= 0) {
-                const next = { stack: current.stack, cursor: i };
-                write(effectiveModal, next);
-                setState(next);
-                prevPanelRef.current = effectivePanel;
-                return;
-            }
-            // Not found -> treat like push (rare, but keeps UI coherent)
+            const next = { stack: current.stack, cursor: foundIndex };
+            write(effectiveModal, next);
+            setState(next);
+            prevPanelRef.current = effectivePanel;
+            return;
         }
 
         // Push semantics: append new panel, truncate forward

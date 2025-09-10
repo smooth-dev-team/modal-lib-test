@@ -1,7 +1,7 @@
 "use client";
 
 import { useSheetUrlState } from "../hooks/useSheetUrlState";
-import { useSheetNavigation } from "../utils/navigation";
+import { useSheetNavigation, describeTransition } from "../utils/navigation";
 import { useSheetHistory } from "../hooks/useSheetHistory";
 
 export function SheetDebug() {
@@ -26,10 +26,16 @@ export function SheetDebug() {
                 <button onClick={() => setModalPanel("settings", "main")}>
                     Open settings/main (push)
                 </button>
-                <button onClick={() => nav.goPanel("profile")} disabled={!modalId}>
+                <button onClick={() => nav.goPanel("main/a")} disabled={!modalId}>
                     Go profile (push)
                 </button>
-                <button onClick={() => nav.goPanel("profile/address")} disabled={!modalId}>
+                <button onClick={() => nav.goPanel("main/a/b")} disabled={!modalId}>
+                    Go address (push)
+                </button>
+                <button onClick={() => nav.goPanel("main/a/c")} disabled={!modalId}>
+                    Go address (push)
+                </button>
+                <button onClick={() => nav.goPanel("main/d")} disabled={!modalId}>
                     Go address (push)
                 </button>
                 <button onClick={() => nav.closeSheet()} disabled={!modalId}>
@@ -57,6 +63,28 @@ export function SheetDebug() {
             <div style={{ marginTop: 8, fontSize: 12 }}>
                 history: {JSON.stringify(hist.history)}
             </div>
+            {panelPath && (
+                <div
+                    style={{
+                        marginTop: 8,
+                        fontSize: 12,
+                        whiteSpace: "pre-wrap",
+                        background: "#f6f8fa",
+                        padding: 8,
+                        borderRadius: 6,
+                    }}>
+                    <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                        Sample transitions (main/a/b/c/d tree)
+                    </div>
+                    <div>{describeTransition(panelPath, "main/a")}</div>
+                    <hr />
+                    <div>{describeTransition(panelPath, "main/a/b")}</div>
+                    <hr />
+                    <div>{describeTransition("main/a/b", "main/d")}</div>
+                    <hr />
+                    <div>{describeTransition("main/a/b", "main")}</div>
+                </div>
+            )}
         </div>
     );
 }
