@@ -21,6 +21,13 @@ function readHistory(modalId: ModalId): HistoryState | null {
     }
 }
 
+function clearHistory(modalId: ModalId) {
+    if (typeof window === "undefined") return;
+    try {
+        sessionStorage.removeItem(HISTORY_KEY_PREFIX + modalId);
+    } catch {}
+}
+
 export function panelDepth(p: PanelPath): number {
     // Prefer registry depth if known, else derive by segment count
     for (const m of Object.keys(registry) as ModalId[]) {
@@ -90,13 +97,24 @@ export function useSheetNavigation(modalId?: ModalId) {
         return noInternalHistory && !sameOriginRef;
     }, [effectiveModal]);
 
-    const closeSheet = useCallback(() => {
-        if (shouldReplaceForDirectLink()) {
-            router.replace(pathname, { scroll: false });
-            return;
-        }
-        router.back();
-    }, [pathname, router, shouldReplaceForDirectLink]);
+    const closeSheet = useCallback(
+        (opts?: { hard?: boolean }) => {
+            const hard = !!opts?.hard;
+            const m = effectiveModal;
+            if (hard && m) {
+                // Hard-close: clear history and replace to base URL
+                clearHistory(m);
+                router.replace(pathname, { scroll: false });
+                return;
+            }
+            if (shouldReplaceForDirectLink()) {
+                router.replace(pathname, { scroll: false });
+                return;
+            }
+            router.back();
+        },
+        [effectiveModal, pathname, router, shouldReplaceForDirectLink]
+    );
 
     const canGoBack = useCallback(() => {
         const m = effectiveModal;
