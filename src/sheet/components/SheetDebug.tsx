@@ -15,6 +15,7 @@ export function SheetDebug() {
                 padding: 16,
                 border: "1px solid #ddd",
                 borderRadius: 8,
+                background: "#fff",
                 position: "fixed",
                 left: 24,
                 top: 24,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useSheetUrlState } from "../hooks/useSheetUrlState";
 import { useSheetNavigation } from "../utils/navigation";
 import { SheetPanelViewport } from "./SheetPanelViewport";
@@ -9,6 +9,9 @@ import { AnimatePresence, motion } from "motion/react";
 export function SheetRoot() {
     const { modalId } = useSheetUrlState();
     const nav = useSheetNavigation(modalId ?? undefined);
+
+    const sheetRef = useRef<HTMLDivElement | null>(null);
+    const prevFocusedRef = useRef<HTMLElement | null>(null);
 
     // Esc to close (active only when sheet is open)
     useEffect(() => {
@@ -27,6 +30,57 @@ export function SheetRoot() {
         document.body.style.overflow = "hidden";
         return () => {
             document.body.style.overflow = prev;
+        };
+    }, [modalId]);
+
+    // Focus management: save previous focus, move focus into sheet, trap tab, and restore on close
+    useEffect(() => {
+        if (!modalId) return;
+        const root = sheetRef.current;
+        // save previously focused element
+        prevFocusedRef.current = (document.activeElement as HTMLElement) || null;
+
+        const FOCUSABLE =
+            'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+        // focus first focusable inside sheet or the sheet container
+        const focusables = root ? Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE)) : [];
+        const toFocus = focusables[0] ?? (root as HTMLElement);
+        try {
+            toFocus?.focus();
+        } catch {}
+
+        const onKeyDown = (e: KeyboardEvent) => {
+            if (e.key !== "Tab") return;
+            if (!root) return;
+            const nodes = Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE));
+            if (nodes.length === 0) {
+                e.preventDefault();
+                return;
+            }
+            const idx = nodes.indexOf(document.activeElement as HTMLElement);
+            if (e.shiftKey) {
+                if (idx === 0 || document.activeElement === root) {
+                    e.preventDefault();
+                    nodes[nodes.length - 1].focus();
+                }
+            } else {
+                if (idx === nodes.length - 1) {
+                    e.preventDefault();
+                    nodes[0].focus();
+                }
+            }
+        };
+
+        root?.addEventListener("keydown", onKeyDown as EventListener);
+        return () => {
+            root?.removeEventListener("keydown", onKeyDown as EventListener);
+            // restore previous focus
+            requestAnimationFrame(() => {
+                try {
+                    prevFocusedRef.current?.focus();
+                } catch {}
+            });
         };
     }, [modalId]);
 
@@ -55,6 +109,8 @@ export function SheetRoot() {
                         role='dialog'
                         aria-modal='true'
                         aria-label='Sheet'
+                        ref={sheetRef}
+                        tabIndex={-1}
                         style={{
                             position: "absolute",
                             left: 0,
