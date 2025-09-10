@@ -49,6 +49,24 @@ export function useSheetHistory(modalId?: ModalId) {
     const popStateFlag = useRef(false);
     const prevPanelRef = useRef<PanelPath | null>(null);
     const [state, setState] = useState<SheetHistory | null>(null);
+    const clearedOnReloadRef = useRef(false);
+
+    // Clear session history on browser reload as per spec
+    useEffect(() => {
+        if (!effectiveModal) return;
+        if (typeof window === "undefined") return;
+        const entries = performance.getEntriesByType
+            ? performance.getEntriesByType("navigation")
+            : [];
+        const first = entries && (entries[0] as PerformanceNavigationTiming | undefined);
+        const navType: string | undefined = first?.type;
+        if (navType === "reload" && !clearedOnReloadRef.current) {
+            try {
+                sessionStorage.removeItem(KEY(effectiveModal));
+            } catch {}
+            clearedOnReloadRef.current = true;
+        }
+    }, [effectiveModal]);
 
     // Initialize or update on modal/panel changes
     useEffect(() => {

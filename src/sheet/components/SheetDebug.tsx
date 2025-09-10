@@ -10,7 +10,16 @@ export function SheetDebug() {
     const hist = useSheetHistory(modalId ?? undefined);
 
     return (
-        <div style={{ padding: 16, border: "1px solid #ddd", borderRadius: 8 }}>
+        <div
+            style={{
+                padding: 16,
+                border: "1px solid #ddd",
+                borderRadius: 8,
+                position: "fixed",
+                left: 24,
+                top: 24,
+                zIndex: 1100,
+            }}>
             <div style={{ fontWeight: 600, marginBottom: 8 }}>Sheet Debug</div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button onClick={() => setModalPanel("settings", "main")}>
