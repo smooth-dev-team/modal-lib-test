@@ -135,7 +135,7 @@ export function SheetRoot() {
                             <div style={{ fontWeight: 600 }}>Sheet</div>
                             <button onClick={() => nav.closeSheet({ hard: true })}>Close</button>
                         </div>
-                        <div style={{ marginTop: 12 }}>
+                        <div style={{ marginTop: 12, height: "200px" }}>
                             <SheetPanelViewport />
                         </div>
                     </motion.div>
