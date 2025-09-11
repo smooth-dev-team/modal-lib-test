@@ -19,9 +19,12 @@ export const DEFAULT_PANEL: Record<ModalId, PanelPath> = {
 
 export const registry: PanelRegistry = {
     settings: {
+        // Sample tree panels for validation
         main: makePanel(0),
-        profile: makePanel(1),
-        "profile/address": makePanel(2),
+        "main/a": makePanel(1),
+        "main/a/b": makePanel(2),
+        "main/a/c": makePanel(2),
+        "main/d": makePanel(1),
     },
     dashboard: {
         insights: makePanel(0),
