@@ -29,6 +29,9 @@ export function SheetDebug() {
                 <button onClick={() => setModalPanel("dashboard", "/")}>
                     Open settings (root) (push)
                 </button>
+                <button onClick={() => setModalPanel("test", "/")}>
+                    Open settings (root) (push)
+                </button>
                 <button onClick={() => nav.goPanel("/a")} disabled={!modalId}>
                     Go a (push)
                 </button>

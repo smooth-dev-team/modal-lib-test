@@ -271,27 +271,6 @@ export function SheetPanelViewport() {
         <div
             ref={containerRef}
             style={{ position: "relative", overflow: "hidden", width: "100%", height: "100%" }}>
-            {/* Debug */}
-            <div
-                style={{
-                    position: "absolute",
-                    top: 4,
-                    right: 4,
-                    zIndex: 30,
-                    background: "#000a",
-                    color: "#fff",
-                    fontSize: 10,
-                    padding: "4px 6px",
-                    borderRadius: 4,
-                    lineHeight: 1.4,
-                }}>
-                cache: {listCachedPanelKeys().join(",") || "(empty)"}
-                <br />
-                x:{Math.round(x.get())} w:{Math.round(w.get())}
-                <br />
-                back:{prevPath ?? "-"} fwd:{nextPath ?? "-"}
-            </div>
-
             {/* Current panel (draggable) */}
             <motion.div
                 style={{

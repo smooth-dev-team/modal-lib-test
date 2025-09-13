@@ -198,7 +198,7 @@ export function SheetRoot() {
                         onDrag={onDrag}
                         onDragEnd={onDragEnd}
                         onClick={(e) => e.stopPropagation()}>
-                        <div
+                        {/* <div
                             style={{
                                 display: "flex",
                                 justifyContent: "space-between",
@@ -206,7 +206,7 @@ export function SheetRoot() {
                             }}>
                             <div style={{ fontWeight: 600 }}>Sheet</div>
                             <button onClick={() => void closeWithAnim()}>Close</button>
-                        </div>
+                        </div> */}
                         <div style={{ marginTop: 12, height: "40dvh" }}>
                             <SheetPanelViewport />
                         </div>
