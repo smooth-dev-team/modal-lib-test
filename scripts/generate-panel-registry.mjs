@@ -5,6 +5,7 @@ import path from "path";
 const ROOT = process.cwd();
 const DEFAULT_BASE_DIR = path.join("src", "sheet", "panels");
 const REGISTRY_OUT = path.join("src", "sheet", "registry.ts");
+const MODALS_TYPES_OUT = path.join("src", "sheet", "modals.generated.ts");
 const CONFIG_PATH = path.join("src", "sheet", "panels.config.json");
 
 async function fileExists(p) {
@@ -140,6 +141,19 @@ async function main() {
     const outAbs = path.join(ROOT, REGISTRY_OUT);
     await fs.writeFile(outAbs, lines.join("\n") + "\n", "utf8");
     console.log(`[gen] Wrote registry: ${outAbs}`);
+
+    // Emit modals.generated.ts for ModalId inference
+    const mids = modalIds.sort();
+    const tLines = [];
+    tLines.push("// AUTO-GENERATED FILE. DO NOT EDIT.");
+    tLines.push("// Run: pnpm gen:panels");
+    tLines.push("export const MODAL_IDS = [");
+    tLines.push(...mids.map((m) => `  ${JSON.stringify(m)},`));
+    tLines.push("] as const;");
+    tLines.push("export type ModalId = typeof MODAL_IDS[number];");
+    const typesOutAbs = path.join(ROOT, MODALS_TYPES_OUT);
+    await fs.writeFile(typesOutAbs, tLines.join("\n") + "\n", "utf8");
+    console.log(`[gen] Wrote modals types: ${typesOutAbs}`);
 }
 
 main().catch((e) => {
