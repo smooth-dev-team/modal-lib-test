@@ -5,13 +5,18 @@ import { useEffect, useMemo, useRef, useState, useLayoutEffect } from "react";
 import { cachePanel, listCachedPanelKeys, getCachedPanel } from "../utils/panelCache";
 import { useSheetUrlState } from "../hooks/useSheetUrlState";
 import { useSheetNavigation } from "../utils/navigation";
-import { registry } from "../registry";
-import type { PanelPath, ModalId } from "../types";
+import { useSheetHistory } from "../hooks/useSheetHistory";
+import type {} from "../types";
 import { SHEET_GESTURE_THRESHOLD } from "../constants";
 
 export function SheetPanelViewport() {
     const { panelPath, modalId } = useSheetUrlState();
     const nav = useSheetNavigation(modalId ?? undefined);
+    const {
+        history: h,
+        canGoBack: canBack,
+        canGoForward: canFwd,
+    } = useSheetHistory(modalId ?? undefined);
     const currentKey = panelPath ?? "__none__";
 
     // Build current node and cache for peeks
@@ -26,7 +31,9 @@ export function SheetPanelViewport() {
                     position: "absolute",
                     inset: 0,
                 }}>
+                <div>(^ω^= ^ω^) おっおっおっおっ</div>
                 <div style={{ fontSize: 12, color: "#666" }}>Panel</div>
+                <div>(^ω^= ^ω^) おっおっおっおっ</div>
                 <div style={{ marginTop: 4, fontWeight: 600 }}>{panelPath ?? "(null)"}</div>
             </div>
         ),
@@ -37,28 +44,15 @@ export function SheetPanelViewport() {
         cachePanel(panelPath, currentNode);
     }, [panelPath, currentNode]);
 
-    // Candidate discovery (parent for back, first child for forward)
-    function findBackCandidate(path: string | null): string | null {
-        if (!path) return null;
-        const segs = path.split("/").filter(Boolean);
-        if (segs.length === 0) return null;
-        const parent = segs.slice(0, -1).join("/");
-        return parent || null;
-    }
-    function findForwardCandidate(modal: string | null, path: string | null): string | null {
-        if (!modal || !path) return null;
-        const reg = registry[modal as ModalId];
-        if (!reg) return null;
-        const currDepth = path.split("/").filter(Boolean).length;
-        for (const key of Object.keys(reg)) {
-            if (!key.startsWith(path + "/")) continue;
-            const depth = key.split("/").filter(Boolean).length;
-            if (depth === currDepth + 1) return key;
-        }
-        return null;
-    }
-    const backCandidate = findBackCandidate(panelPath ?? null);
-    const forwardCandidate = findForwardCandidate(modalId, panelPath ?? null);
+    // History-driven prev/next candidates (equivalent to Back/Forward buttons)
+    const prevPath = useMemo(() => {
+        if (!h) return null;
+        return h.cursor > 0 ? h.stack[h.cursor - 1] : null;
+    }, [h]);
+    const nextPath = useMemo(() => {
+        if (!h) return null;
+        return h.cursor < h.stack.length - 1 ? h.stack[h.cursor + 1] : null;
+    }, [h]);
     // Motion values and width measurement (SlideStack-like)
     const x = useMotionValue(0);
     const w = useMotionValue(0);
@@ -137,16 +131,16 @@ export function SheetPanelViewport() {
         animRef.current?.stop?.();
         animRef.current?.cancel?.();
         x.set(0);
-    }, [backCandidate, forwardCandidate, x]);
+    }, [prevPath, nextPath, x]);
 
     useLayoutEffect(() => {
         const ww = w.get();
         const val = x.get();
         if (suppressResetsRef.current) return;
-        if (!backCandidate && val > 0) x.set(0);
-        if (!forwardCandidate && val < 0) x.set(0);
+        if (!prevPath && val > 0) x.set(0);
+        if (!nextPath && val < 0) x.set(0);
         if (Math.abs(val) > ww + 2) x.set(0);
-    }, [backCandidate, forwardCandidate, w, x]);
+    }, [prevPath, nextPath, w, x]);
 
     useLayoutEffect(() => {
         const unsub = x.on("change", (val) => {
@@ -162,21 +156,21 @@ export function SheetPanelViewport() {
     const onDragEnd = (_: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
         const cur = x.get();
         const v = info.velocity.x;
-        if ((cur <= -DIST || v < -VEL) && canDragLeft && forwardCandidate) {
+        if ((cur <= -DIST || v < -VEL) && canDragLeft && nextPath) {
             suppressResetsRef.current = true;
-            animTo(-w.get()).finished.then(() => nav.goPanel(forwardCandidate as PanelPath));
-        } else if ((cur >= DIST || v > VEL) && canDragRight && backCandidate) {
+            animTo(-w.get()).finished.then(() => nav.goForward());
+        } else if ((cur >= DIST || v > VEL) && canDragRight && prevPath) {
             suppressResetsRef.current = true;
-            animTo(w.get()).finished.then(() => nav.goPanel(backCandidate as PanelPath));
+            animTo(w.get()).finished.then(() => nav.goBack());
         } else {
             animTo(0).finished.then(() => x.set(0));
         }
     };
 
-    const backPeekNode = backCandidate ? getCachedPanel(backCandidate) : null;
-    const forwardPeekNode = forwardCandidate ? getCachedPanel(forwardCandidate) : null;
-    const canDragRight = !!(backCandidate && backPeekNode);
-    const canDragLeft = !!(forwardCandidate && forwardPeekNode);
+    const backPeekNode = prevPath ? getCachedPanel(prevPath) : null;
+    const forwardPeekNode = nextPath ? getCachedPanel(nextPath) : null;
+    const canDragRight = !!(canBack && backPeekNode);
+    const canDragLeft = !!(canFwd && forwardPeekNode);
 
     return (
         <div
@@ -200,7 +194,7 @@ export function SheetPanelViewport() {
                 <br />
                 x:{Math.round(x.get())} w:{Math.round(w.get())}
                 <br />
-                back:{backCandidate ?? "-"} fwd:{forwardCandidate ?? "-"}
+                back:{prevPath ?? "-"} fwd:{nextPath ?? "-"}
             </div>
 
             {/* Current panel (draggable) */}
@@ -228,7 +222,7 @@ export function SheetPanelViewport() {
             </motion.div>
 
             {/* Prev peek */}
-            {backCandidate && (
+            {prevPath && (
                 <motion.div
                     aria-hidden
                     style={{
@@ -251,7 +245,7 @@ export function SheetPanelViewport() {
                         <div style={{ fontSize: 11, fontWeight: 600, color: "#036" }}>
                             Back peek
                         </div>
-                        <div style={{ fontSize: 11, marginTop: 4 }}>{backCandidate}</div>
+                        <div style={{ fontSize: 11, marginTop: 4 }}>{prevPath}</div>
                         <div style={{ marginTop: 6, fontSize: 10, color: "#369" }}>
                             {backPeekNode}
                         </div>
@@ -260,7 +254,7 @@ export function SheetPanelViewport() {
             )}
 
             {/* Next peek */}
-            {forwardCandidate && (
+            {nextPath && (
                 <motion.div
                     aria-hidden
                     style={{
@@ -283,7 +277,7 @@ export function SheetPanelViewport() {
                         <div style={{ fontSize: 11, fontWeight: 600, color: "#853" }}>
                             Forward peek
                         </div>
-                        <div style={{ fontSize: 11, marginTop: 4 }}>{forwardCandidate}</div>
+                        <div style={{ fontSize: 11, marginTop: 4 }}>{nextPath}</div>
                         <div style={{ marginTop: 6, fontSize: 10, color: "#a63" }}>
                             {forwardPeekNode}
                         </div>
