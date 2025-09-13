@@ -315,7 +315,7 @@ export function SheetPanelViewport() {
             </motion.div>
 
             {/* Prev peek */}
-            {prevPath && (
+            {prevPath && backPeekNode && (
                 <motion.div
                     aria-hidden
                     style={{
@@ -327,27 +327,12 @@ export function SheetPanelViewport() {
                         backfaceVisibility: "hidden",
                         transform: "translateZ(0)",
                     }}>
-                    <div
-                        style={{
-                            position: "absolute",
-                            inset: 0,
-                            background: "#e6f2ff",
-                            padding: 12,
-                            borderRight: "1px solid #c5e0ff",
-                        }}>
-                        <div style={{ fontSize: 11, fontWeight: 600, color: "#036" }}>
-                            Back peek
-                        </div>
-                        <div style={{ fontSize: 11, marginTop: 4 }}>{prevPath}</div>
-                        <div style={{ marginTop: 6, fontSize: 10, color: "#369" }}>
-                            {backPeekNode}
-                        </div>
-                    </div>
+                    {backPeekNode}
                 </motion.div>
             )}
 
             {/* Next peek */}
-            {nextPath && (
+            {nextPath && forwardPeekNode && (
                 <motion.div
                     aria-hidden
                     style={{
@@ -359,22 +344,7 @@ export function SheetPanelViewport() {
                         backfaceVisibility: "hidden",
                         transform: "translateZ(0)",
                     }}>
-                    <div
-                        style={{
-                            position: "absolute",
-                            inset: 0,
-                            background: "#fff5e6",
-                            padding: 12,
-                            borderLeft: "1px solid #ffd699",
-                        }}>
-                        <div style={{ fontSize: 11, fontWeight: 600, color: "#853" }}>
-                            Forward peek
-                        </div>
-                        <div style={{ fontSize: 11, marginTop: 4 }}>{nextPath}</div>
-                        <div style={{ marginTop: 6, fontSize: 10, color: "#a63" }}>
-                            {forwardPeekNode}
-                        </div>
-                    </div>
+                    {forwardPeekNode}
                 </motion.div>
             )}
 
