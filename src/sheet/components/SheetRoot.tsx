@@ -207,7 +207,7 @@ export function SheetRoot() {
                             <div style={{ fontWeight: 600 }}>Sheet</div>
                             <button onClick={() => void closeWithAnim()}>Close</button>
                         </div>
-                        <div style={{ marginTop: 12, height: "200px" }}>
+                        <div style={{ marginTop: 12, height: "40dvh" }}>
                             <SheetPanelViewport />
                         </div>
                     </motion.div>

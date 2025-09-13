@@ -1,0 +1,7 @@
+{
+    "baseDir": "src/sheet/panels",
+    "defaults": {
+        "settings": "main",
+        "dashboard": "insights"
+    }
+}

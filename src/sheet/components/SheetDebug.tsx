@@ -23,20 +23,23 @@ export function SheetDebug() {
             }}>
             <div style={{ fontWeight: 600, marginBottom: 8 }}>Sheet Debug</div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <button onClick={() => setModalPanel("settings", "main")}>
-                    Open settings/main (push)
+                <button onClick={() => setModalPanel("settings", "/")}>
+                    Open settings (root) (push)
                 </button>
-                <button onClick={() => nav.goPanel("main/a")} disabled={!modalId}>
-                    Go profile (push)
+                <button onClick={() => setModalPanel("dashboard", "/")}>
+                    Open settings (root) (push)
                 </button>
-                <button onClick={() => nav.goPanel("main/a/b")} disabled={!modalId}>
-                    Go address (push)
+                <button onClick={() => nav.goPanel("/a")} disabled={!modalId}>
+                    Go a (push)
                 </button>
-                <button onClick={() => nav.goPanel("main/a/c")} disabled={!modalId}>
-                    Go address (push)
+                <button onClick={() => nav.goPanel("/a/b")} disabled={!modalId}>
+                    Go a/b (push)
                 </button>
-                <button onClick={() => nav.goPanel("main/d")} disabled={!modalId}>
-                    Go address (push)
+                <button onClick={() => nav.goPanel("/a/c")} disabled={!modalId}>
+                    Go a/c (push)
+                </button>
+                <button onClick={() => nav.goPanel("/d")} disabled={!modalId}>
+                    Go d (push)
                 </button>
                 <button onClick={() => nav.closeSheet()} disabled={!modalId}>
                     Close (back or replace)
@@ -74,15 +77,15 @@ export function SheetDebug() {
                         borderRadius: 6,
                     }}>
                     <div style={{ fontWeight: 600, marginBottom: 4 }}>
-                        Sample transitions (main/a/b/c/d tree)
+                        Sample transitions (root/a/b/c/d tree)
                     </div>
-                    <div>{describeTransition(panelPath, "main/a")}</div>
+                    <div>{describeTransition(panelPath, "a")}</div>
                     <hr />
-                    <div>{describeTransition(panelPath, "main/a/b")}</div>
+                    <div>{describeTransition(panelPath, "a/b")}</div>
                     <hr />
-                    <div>{describeTransition("main/a/b", "main/d")}</div>
+                    <div>{describeTransition("a/b", "d")}</div>
                     <hr />
-                    <div>{describeTransition("main/a/b", "main")}</div>
+                    <div>{describeTransition("a/b", "")}</div>
                 </div>
             )}
         </div>

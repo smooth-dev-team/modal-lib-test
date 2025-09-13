@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { defaultPanelFor, isKnownModal } from "../validation";
+import { defaultPanelFor, isKnownModal, normalizePanelFor } from "../validation";
 import type { ModalId, PanelPath } from "../types";
 import { registry } from "../registry";
 
@@ -69,7 +69,7 @@ export function determineTransition(
     prev: PanelPath | null,
     next: PanelPath | null
 ): TransitionKind {
-    if (!prev || !next) return "none";
+    if (prev == null || next == null) return "none";
     if (prev === next) return "none";
     const prevSeg = splitPanelPath(prev);
     const nextSeg = splitPanelPath(next);
@@ -106,11 +106,13 @@ export function useSheetNavigation(modalId?: ModalId) {
     const effectiveModal = modalId ?? currentModal;
 
     const makeUrl = useCallback(
-        (m: ModalId | null, p: PanelPath | null) => {
+        (m: ModalId | null, p: PanelPath | null | "/") => {
             const sp = new URLSearchParams(searchParams.toString());
             if (m) {
                 sp.set("m", m);
-                sp.set("p", p ?? defaultPanelFor(m));
+                const normalized = normalizePanelFor(m, p as string | null);
+                const toWrite = normalized ?? defaultPanelFor(m);
+                sp.set("p", toWrite === "" ? "" : toWrite);
             } else {
                 sp.delete("m");
                 sp.delete("p");
@@ -130,17 +132,22 @@ export function useSheetNavigation(modalId?: ModalId) {
 
     // Jump: rebuild stack to the full path segments and move cursor to last
     const jumpTo = useCallback(
-        (p: PanelPath) => {
+        (p: PanelPath | "/") => {
             const m = effectiveModal;
             if (!m) return;
-            const next: HistoryState = {
-                stack: buildStackFromPath(p),
-                cursor: splitPanelPath(p).length - 1,
-            };
+            const norm = normalizePanelFor(m, p as string);
+            if (!norm) return;
+            const base = defaultPanelFor(m);
+            const stack = buildStackFromPath(norm);
+            // Ensure root "" stays at the bottom when default panel is empty
+            if (base === "" && stack[0] !== "") {
+                stack.unshift("");
+            }
+            const next: HistoryState = { stack, cursor: stack.length - 1 };
             try {
                 sessionStorage.setItem(HISTORY_KEY_PREFIX + m, JSON.stringify(next));
             } catch {}
-            router.push(makeUrl(m, p), { scroll: false });
+            router.push(makeUrl(m, norm), { scroll: false });
         },
         [effectiveModal, makeUrl, router]
     );

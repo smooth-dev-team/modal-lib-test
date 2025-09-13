@@ -2,7 +2,7 @@
 
 import { useMemo, useCallback } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { resolveValidState, isKnownModal, defaultPanelFor } from "../validation";
+import { resolveValidState, isKnownModal, defaultPanelFor, normalizePanelFor } from "../validation";
 import type { ModalId, PanelPath } from "../types";
 
 type UrlState = {
@@ -26,11 +26,13 @@ export function useSheetUrlState(): UrlState {
     );
 
     const buildQuery = useCallback(
-        (nextM: ModalId | null, nextP: PanelPath | null) => {
+        (nextM: ModalId | null, nextP: PanelPath | null | "/") => {
             const sp = new URLSearchParams(searchParams.toString());
             if (nextM) {
                 sp.set("m", nextM);
-                sp.set("p", nextP ?? defaultPanelFor(nextM));
+                const normalized = normalizePanelFor(nextM, nextP as string | null);
+                const toWrite = normalized ?? defaultPanelFor(nextM);
+                sp.set("p", toWrite === "" ? "" : toWrite);
             } else {
                 sp.delete("m");
                 sp.delete("p");
@@ -41,8 +43,8 @@ export function useSheetUrlState(): UrlState {
     );
 
     const setModalPanel = useCallback(
-        (m: ModalId, p?: PanelPath) => {
-            const url = buildQuery(m, p ?? defaultPanelFor(m));
+        (m: ModalId, p?: PanelPath | "/") => {
+            const url = buildQuery(m, (p as PanelPath | "/") ?? defaultPanelFor(m));
             // App Router ignores "shallow"; we pass scroll: false per spec intent
             router.push(url, { scroll: false });
         },
@@ -50,8 +52,11 @@ export function useSheetUrlState(): UrlState {
     );
 
     const replaceModalPanel = useCallback(
-        (m: ModalId | null, p?: PanelPath | null) => {
-            const url = buildQuery(m, (m && (p ?? defaultPanelFor(m))) || null);
+        (m: ModalId | null, p?: PanelPath | null | "/") => {
+            const url = buildQuery(
+                m,
+                (m && ((p as PanelPath | "/") ?? defaultPanelFor(m))) || null
+            );
             router.replace(url, { scroll: false });
         },
         [buildQuery, router]

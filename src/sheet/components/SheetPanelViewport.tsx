@@ -2,12 +2,14 @@
 
 import { animate, motion, PanInfo, useMotionValue } from "motion/react";
 import { useEffect, useMemo, useRef, useState, useLayoutEffect } from "react";
+import type { ComponentType } from "react";
 import { cachePanel, listCachedPanelKeys, getCachedPanel } from "../utils/panelCache";
 import { useSheetUrlState } from "../hooks/useSheetUrlState";
 import { useSheetNavigation, determineTransition } from "../utils/navigation";
 import { useSheetHistory } from "../hooks/useSheetHistory";
 import type {} from "../types";
 import { SHEET_GESTURE_THRESHOLD } from "../constants";
+import { registry } from "../registry";
 
 export function SheetPanelViewport() {
     const { panelPath, modalId } = useSheetUrlState();
@@ -17,32 +19,42 @@ export function SheetPanelViewport() {
         canGoBack: canBack,
         canGoForward: canFwd,
     } = useSheetHistory(modalId ?? undefined);
-    const currentKey = panelPath ?? "__none__";
+    // currentKey must distinguish null from "" (root panel)
+    const currentKey = panelPath === null ? "__none__" : panelPath;
 
-    // Build current node and cache for peeks
-    const currentNode = useMemo(
-        () => (
-            <div
-                style={{
-                    border: "1px dashed #ccc",
-                    borderRadius: 8,
-                    padding: 12,
-                    background: "#fafafa",
-                    position: "absolute",
-                    inset: 0,
-                }}>
-                <div>(^ω^= ^ω^) おっおっおっおっ</div>
-                <div style={{ fontSize: 12, color: "#666" }}>Panel</div>
-                <div>(^ω^= ^ω^) おっおっおっおっ</div>
-                <div style={{ marginTop: 4, fontWeight: 600 }}>{panelPath ?? "(null)"}</div>
-            </div>
-        ),
-        [panelPath]
-    );
+    // Dynamically import and render the current panel component from registry
+    const [Comp, setComp] = useState<ComponentType<unknown> | null>(null);
     useEffect(() => {
-        if (!panelPath) return;
+        let cancelled = false;
+        setComp(null);
+        if (!modalId || panelPath == null) return;
+        const def = registry[modalId]?.[panelPath];
+        if (!def) return;
+        def.import()
+            .then((m) => {
+                if (!cancelled) setComp(() => m.default as ComponentType<unknown>);
+            })
+            .catch(() => {
+                if (!cancelled) setComp(null);
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [modalId, panelPath]);
+
+    const currentNode = useMemo(() => {
+        if (Comp) return <Comp />;
+        // lightweight fallback until component loads
+        const def = modalId && panelPath != null ? registry[modalId]?.[panelPath] : undefined;
+        if (def?.fallback) return def.fallback as React.ReactNode;
+        return null;
+    }, [Comp, modalId, panelPath]);
+
+    // Cache only after the real component is loaded (avoid caching skeleton for peeks)
+    useEffect(() => {
+        if (panelPath == null || !Comp || !currentNode) return;
         cachePanel(panelPath, currentNode);
-    }, [panelPath, currentNode]);
+    }, [panelPath, Comp, currentNode]);
 
     // History-driven prev/next candidates (equivalent to Back/Forward buttons)
     const prevPath = useMemo(() => {
@@ -138,7 +150,7 @@ export function SheetPanelViewport() {
     useEffect(() => {
         const prev = prevPathRef.current;
         const next = panelPath ?? null;
-        if (!prev || !next || prev === next) {
+        if (prev == null || next == null || prev === next) {
             prevPathRef.current = next;
             return;
         }
@@ -217,8 +229,8 @@ export function SheetPanelViewport() {
         const ww = w.get();
         const val = x.get();
         if (suppressResetsRef.current) return;
-        if (!prevPath && val > 0) x.set(0);
-        if (!nextPath && val < 0) x.set(0);
+        if (prevPath == null && val > 0) x.set(0);
+        if (nextPath == null && val < 0) x.set(0);
         if (Math.abs(val) > ww + 2) x.set(0);
     }, [prevPath, nextPath, w, x]);
 
@@ -236,11 +248,11 @@ export function SheetPanelViewport() {
     const onDragEnd = (_: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
         const cur = x.get();
         const v = info.velocity.x;
-        if ((cur <= -DIST || v < -VEL) && canDragLeft && nextPath) {
+        if ((cur <= -DIST || v < -VEL) && canDragLeft && nextPath != null) {
             suppressResetsRef.current = true;
             skipNextProgramAnimRef.current = true;
             animTo(-w.get()).finished.then(() => nav.goForward());
-        } else if ((cur >= DIST || v > VEL) && canDragRight && prevPath) {
+        } else if ((cur >= DIST || v > VEL) && canDragRight && prevPath != null) {
             suppressResetsRef.current = true;
             skipNextProgramAnimRef.current = true;
             animTo(w.get()).finished.then(() => nav.goBack());
@@ -249,10 +261,11 @@ export function SheetPanelViewport() {
         }
     };
 
-    const backPeekNode = prevPath ? getCachedPanel(prevPath) : null;
-    const forwardPeekNode = nextPath ? getCachedPanel(nextPath) : null;
-    const canDragRight = !!(canBack && backPeekNode);
-    const canDragLeft = !!(canFwd && forwardPeekNode);
+    const backPeekNode = prevPath != null ? getCachedPanel(prevPath) : null;
+    const forwardPeekNode = nextPath != null ? getCachedPanel(nextPath) : null;
+    // Allow drag based solely on history availability; peek nodes are optional for visuals
+    const canDragRight = !!canBack;
+    const canDragLeft = !!canFwd;
 
     return (
         <div
@@ -315,7 +328,7 @@ export function SheetPanelViewport() {
             </motion.div>
 
             {/* Prev peek */}
-            {prevPath && backPeekNode && (
+            {prevPath != null && backPeekNode && (
                 <motion.div
                     aria-hidden
                     style={{
@@ -332,7 +345,7 @@ export function SheetPanelViewport() {
             )}
 
             {/* Next peek */}
-            {nextPath && forwardPeekNode && (
+            {nextPath != null && forwardPeekNode && (
                 <motion.div
                     aria-hidden
                     style={{
