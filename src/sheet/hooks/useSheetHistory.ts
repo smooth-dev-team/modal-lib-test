@@ -43,7 +43,8 @@ export function useSheetHistory(modalId?: ModalId) {
     const effectiveModal = modalId ?? activeModal;
     const effectivePanel: PanelPath | null = useMemo(() => {
         if (!effectiveModal) return null;
-        return (pParam as PanelPath) || defaultPanelFor(effectiveModal);
+        // pParam may be "" (root). Use nullish check instead of falsy.
+        return (pParam as PanelPath | null) ?? defaultPanelFor(effectiveModal);
     }, [effectiveModal, pParam]);
 
     const popStateFlag = useRef(false);
@@ -70,10 +71,19 @@ export function useSheetHistory(modalId?: ModalId) {
 
     // Initialize or update on modal/panel changes
     useEffect(() => {
-        if (!effectiveModal || !effectivePanel) return;
+        if (!effectiveModal || effectivePanel == null) return;
         const current = read(effectiveModal);
         // First-time or after reload: reset to only current panel
         if (!current) {
+            // If default is root "" and current is not root, seed with ["", current]
+            const def = defaultPanelFor(effectiveModal);
+            if (def === "" && effectivePanel !== "") {
+                const seeded: SheetHistory = { stack: ["", effectivePanel], cursor: 1 };
+                write(effectiveModal, seeded);
+                setState(seeded);
+                prevPanelRef.current = effectivePanel;
+                return;
+            }
             setState(reset(effectiveModal, effectivePanel));
             prevPanelRef.current = effectivePanel;
             return;
@@ -114,7 +124,7 @@ export function useSheetHistory(modalId?: ModalId) {
     const canGoForward = useMemo(() => !!state && state.cursor < state.stack.length - 1, [state]);
 
     const clear = useCallback(() => {
-        if (!effectiveModal || !effectivePanel) return;
+        if (!effectiveModal || effectivePanel == null) return;
         setState(reset(effectiveModal, effectivePanel));
     }, [effectiveModal, effectivePanel]);
 

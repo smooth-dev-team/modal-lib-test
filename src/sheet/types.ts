@@ -1,5 +1,7 @@
 import type { ComponentType, ReactNode } from "react";
-export type ModalId = "settings" | "dashboard"; // v1 modal ids
+import type { ModalId as _ModalId } from "./modals.generated";
+export type ModalId = _ModalId;
+export { MODAL_IDS } from "./modals.generated";
 
 // Accepts kebab/slug segment(s) separated by '/'
 export type PanelPath = string; // e.g. 'main' | 'profile' | 'profile/address'

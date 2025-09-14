@@ -1,10 +1,17 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { useSheetUrlState } from "../hooks/useSheetUrlState";
 import { useSheetNavigation } from "../utils/navigation";
 import { SheetPanelViewport } from "./SheetPanelViewport";
-import { AnimatePresence, motion } from "motion/react";
+import {
+    AnimatePresence,
+    motion,
+    useMotionValue,
+    useTransform,
+    animate,
+    PanInfo,
+} from "motion/react";
 
 export function SheetRoot() {
     const { modalId } = useSheetUrlState();
@@ -12,16 +19,33 @@ export function SheetRoot() {
 
     const sheetRef = useRef<HTMLDivElement | null>(null);
     const prevFocusedRef = useRef<HTMLElement | null>(null);
+    const y = useMotionValue(480);
+    const sheetHeightRef = useRef<number>(480);
+    const backdrop = useTransform(y, (latest) => {
+        const H = sheetHeightRef.current || 480;
+        const t = Math.max(0, Math.min(1, 1 - latest / H));
+        return 0.4 * t;
+    });
+    const pointerEvents = useTransform(backdrop, (b) => (b > 0.001 ? "auto" : "none"));
 
     // Esc to close (active only when sheet is open)
+    const closeWithAnim = useCallback(() => {
+        const target = sheetHeightRef.current || 480;
+        return animate(y, target, {
+            type: "tween",
+            duration: 0.2,
+            ease: [0.22, 1, 0.36, 1],
+        }).finished.then(() => nav.closeSheet({ hard: true }));
+    }, [nav, y]);
+
     useEffect(() => {
         if (!modalId) return;
         const onKey = (e: KeyboardEvent) => {
-            if (e.key === "Escape") nav.closeSheet({ hard: true });
+            if (e.key === "Escape") void closeWithAnim();
         };
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
-    }, [modalId, nav]);
+    }, [modalId, closeWithAnim]);
 
     // Background scroll lock (active only when sheet is open)
     useEffect(() => {
@@ -84,27 +108,68 @@ export function SheetRoot() {
         };
     }, [modalId]);
 
+    // Measure and mount animation
+    useLayoutEffect(() => {
+        if (!modalId) return;
+        const el = sheetRef.current;
+        const measure = () => {
+            if (!el) return;
+            const h = el.offsetHeight;
+            if (h > 0) sheetHeightRef.current = h;
+        };
+        measure();
+        y.set(sheetHeightRef.current);
+        requestAnimationFrame(() => {
+            animate(y, 0, { type: "tween", duration: 0.22, ease: [0.22, 1, 0.36, 1] });
+        });
+        let ro: ResizeObserver | undefined;
+        if (typeof ResizeObserver !== "undefined" && el) {
+            ro = new ResizeObserver(() => measure());
+            ro.observe(el);
+        }
+        return () => {
+            ro?.disconnect();
+        };
+    }, [modalId, y]);
+
+    const onDrag = useCallback(
+        (_e: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
+            const next = Math.max(0, y.get() + info.delta.y);
+            y.set(next);
+        },
+        [y]
+    );
+
+    const onDragEnd = useCallback(() => {
+        const current = y.get();
+        const H = sheetHeightRef.current || 480;
+        const threshold = Math.max(80, 0.25 * H);
+        if (current >= threshold) {
+            void closeWithAnim();
+        } else {
+            animate(y, 0, { type: "tween", duration: 0.18, ease: [0.22, 1, 0.36, 1] });
+        }
+    }, [y, closeWithAnim]);
+
     return (
         <AnimatePresence initial={false}>
             {modalId && (
                 <motion.div
                     key='sheet-root'
                     aria-hidden={false}
-                    style={{ position: "fixed", inset: 0, zIndex: 1010 }}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    transition={{ duration: 0.12 }}>
-                    {/* Overlay */}
+                    style={{ position: "fixed", inset: 0, zIndex: 1010 }}>
+                    {/* Overlay with animated opacity and pointer events */}
                     <motion.div
-                        onClick={() => nav.closeSheet({ hard: true })}
-                        style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.4)" }}
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        transition={{ duration: 0.12 }}
+                        onClick={() => void closeWithAnim()}
+                        style={{
+                            position: "absolute",
+                            inset: 0,
+                            background: "rgba(0,0,0,1)",
+                            opacity: backdrop,
+                            pointerEvents,
+                        }}
                     />
-                    {/* Sheet body */}
+                    {/* Sheet body with push-in/out and drag-to-close */}
                     <motion.div
                         role='dialog'
                         aria-modal='true'
@@ -121,21 +186,28 @@ export function SheetRoot() {
                             borderTopRightRadius: 24,
                             maxHeight: "86vh",
                             padding: 16,
+                            y,
+                            paddingBottom: "env(safe-area-inset-bottom)",
+                            touchAction: "none",
+                            willChange: "transform",
                         }}
-                        initial={{ y: 40, opacity: 0 }}
-                        animate={{ y: 0, opacity: 1 }}
-                        exit={{ y: 40, opacity: 0 }}
-                        transition={{ type: "spring", stiffness: 400, damping: 34, mass: 0.8 }}>
-                        <div
+                        drag='y'
+                        dragMomentum={false}
+                        dragElastic={0}
+                        dragListener
+                        onDrag={onDrag}
+                        onDragEnd={onDragEnd}
+                        onClick={(e) => e.stopPropagation()}>
+                        {/* <div
                             style={{
                                 display: "flex",
                                 justifyContent: "space-between",
                                 alignItems: "center",
                             }}>
                             <div style={{ fontWeight: 600 }}>Sheet</div>
-                            <button onClick={() => nav.closeSheet({ hard: true })}>Close</button>
-                        </div>
-                        <div style={{ marginTop: 12, height: "200px" }}>
+                            <button onClick={() => void closeWithAnim()}>Close</button>
+                        </div> */}
+                        <div style={{ marginTop: 12, height: "40dvh" }}>
                             <SheetPanelViewport />
                         </div>
                     </motion.div>
