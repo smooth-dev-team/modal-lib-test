@@ -19,7 +19,7 @@ export function SheetDebug() {
                 position: "fixed",
                 left: 24,
                 top: 24,
-                zIndex: 1100,
+                // zIndex: 1100,
             }}>
             <div style={{ fontWeight: 600, marginBottom: 8 }}>Sheet Debug</div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>

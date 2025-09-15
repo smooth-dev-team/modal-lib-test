@@ -8,7 +8,11 @@ import { useSheetUrlState } from "../hooks/useSheetUrlState";
 import { useSheetNavigation, determineTransition } from "../utils/navigation";
 import { useSheetHistory } from "../hooks/useSheetHistory";
 import type {} from "../types";
-import { SHEET_GESTURE_THRESHOLD } from "../constants";
+import {
+    SHEET_GESTURE_THRESHOLD,
+    PANEL_ANIMATION_MODE,
+    PANEL_ANIMATION_PRESETS,
+} from "../constants";
 import { registry } from "../registry";
 import { usePanelLoader } from "../hooks/usePanelLoader";
 
@@ -91,8 +95,30 @@ export function SheetPanelViewport() {
         animRef.current?.stop?.();
         animRef.current?.cancel?.();
         const d = Math.abs(x.get() - t);
-        const dur = Math.min(Math.max(d / 1200, 0.18), 0.25);
-        const ctrl = animate(x, t, { type: "tween", duration: dur, ease: [0.32, 0.72, 0, 1] });
+        if (PANEL_ANIMATION_MODE === "spring") {
+            const ctrl = animate(x, t, {
+                type: "spring",
+                ...PANEL_ANIMATION_PRESETS.spring.slide,
+            });
+            animRef.current = ctrl as unknown as {
+                stop?: () => void;
+                cancel?: () => void;
+                finished: Promise<void>;
+            };
+            isAnimatingRef.current = true;
+            ctrl.finished.finally(() => {
+                isAnimatingRef.current = false;
+            });
+            return ctrl;
+        }
+        const { pxPerSecond, minDuration, maxDuration } =
+            PANEL_ANIMATION_PRESETS.tween.slideDynamic;
+        const dur = Math.min(Math.max(d / pxPerSecond, minDuration), maxDuration);
+        const ctrl = animate(x, t, {
+            type: "tween",
+            duration: dur,
+            ease: PANEL_ANIMATION_PRESETS.tween.slideEase,
+        });
         animRef.current = ctrl as unknown as {
             stop?: () => void;
             cancel?: () => void;
@@ -175,16 +201,28 @@ export function SheetPanelViewport() {
                 progInX.set(-ww);
             }
             setOutgoingNode(outNode ?? null);
-            const inCtrl = animate(progInX, 0, {
-                type: "tween",
-                duration: 0.22,
-                ease: [0.32, 0.72, 0, 1],
-            });
-            const outCtrl = animate(progOutX, kind === "forward" ? -ww : ww, {
-                type: "tween",
-                duration: 0.22,
-                ease: [0.32, 0.72, 0, 1],
-            });
+            let inCtrl, outCtrl;
+            if (PANEL_ANIMATION_MODE === "spring") {
+                inCtrl = animate(progInX, 0, {
+                    type: "spring",
+                    ...PANEL_ANIMATION_PRESETS.spring.slide,
+                });
+                outCtrl = animate(progOutX, kind === "forward" ? -ww : ww, {
+                    type: "spring",
+                    ...PANEL_ANIMATION_PRESETS.spring.slide,
+                });
+            } else {
+                inCtrl = animate(progInX, 0, {
+                    type: "tween",
+                    duration: PANEL_ANIMATION_PRESETS.tween.slideProgrammaticDuration,
+                    ease: PANEL_ANIMATION_PRESETS.tween.slideEase,
+                });
+                outCtrl = animate(progOutX, kind === "forward" ? -ww : ww, {
+                    type: "tween",
+                    duration: PANEL_ANIMATION_PRESETS.tween.slideProgrammaticDuration,
+                    ease: PANEL_ANIMATION_PRESETS.tween.slideEase,
+                });
+            }
             Promise.all([inCtrl.finished, outCtrl.finished]).finally(() => {
                 setOutgoingNode(null);
                 progInX.set(0);
@@ -199,13 +237,13 @@ export function SheetPanelViewport() {
             setOutgoingNode(outNode ?? null);
             const inCtrl = animate(progInOpacity, 1, {
                 type: "tween",
-                duration: 0.18,
-                ease: [0.25, 0.1, 0.25, 1],
+                duration: PANEL_ANIMATION_PRESETS.tween.fadeDuration,
+                ease: PANEL_ANIMATION_PRESETS.tween.fadeEase,
             });
             const outCtrl = animate(progOutOpacity, 0, {
                 type: "tween",
-                duration: 0.18,
-                ease: [0.25, 0.1, 0.25, 1],
+                duration: PANEL_ANIMATION_PRESETS.tween.fadeDuration,
+                ease: PANEL_ANIMATION_PRESETS.tween.fadeEase,
             });
             Promise.all([inCtrl.finished, outCtrl.finished]).finally(() => {
                 setOutgoingNode(null);
@@ -283,23 +321,45 @@ export function SheetPanelViewport() {
             setIncomingBridgeNode(peekSnapshot ?? null);
             progInX.set(startX);
         });
-        animate(progInX, 0, {
-            type: "tween",
-            duration: Math.min(Math.max(Math.abs(startX) / 1200, 0.14), 0.26),
-            ease: [0.32, 0.72, 0, 1],
-        }).finished.catch(() => {});
+        if (PANEL_ANIMATION_MODE === "spring") {
+            animate(progInX, 0, {
+                type: "spring",
+                ...PANEL_ANIMATION_PRESETS.spring.slide,
+            }).finished.catch(() => {});
+        } else {
+            const { pxPerSecond, minDuration, maxDuration } =
+                PANEL_ANIMATION_PRESETS.tween.slideDynamic;
+            animate(progInX, 0, {
+                type: "tween",
+                duration: Math.min(
+                    Math.max(Math.abs(startX) / pxPerSecond, minDuration),
+                    maxDuration
+                ),
+                ease: PANEL_ANIMATION_PRESETS.tween.slideEase,
+            }).finished.catch(() => {});
+        }
         if (direction === "forward") nav.goForward();
         else nav.goBack();
         x.set(0);
         const outTarget = direction === "forward" ? -ww : ww;
-        const outCtrl = animate(progOutX, outTarget, {
-            type: "tween",
-            duration: Math.min(
-                Math.max(Math.abs(direction === "forward" ? cur + ww : ww - cur) / 1200, 0.14),
-                0.24
-            ),
-            ease: [0.32, 0.72, 0, 1],
-        });
+        const outCtrl =
+            PANEL_ANIMATION_MODE === "spring"
+                ? animate(progOutX, outTarget, {
+                      type: "spring",
+                      ...PANEL_ANIMATION_PRESETS.spring.slide,
+                  })
+                : animate(progOutX, outTarget, {
+                      type: "tween",
+                      duration: Math.min(
+                          Math.max(
+                              Math.abs(direction === "forward" ? cur + ww : ww - cur) /
+                                  PANEL_ANIMATION_PRESETS.tween.slideDynamic.pxPerSecond,
+                              PANEL_ANIMATION_PRESETS.tween.slideDynamic.minDuration
+                          ),
+                          0.24
+                      ),
+                      ease: PANEL_ANIMATION_PRESETS.tween.slideEase,
+                  });
         outCtrl.finished.finally(() => {
             setOutgoingNode(null);
             progOutX.set(0);
