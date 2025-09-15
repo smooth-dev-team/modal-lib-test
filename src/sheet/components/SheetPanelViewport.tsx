@@ -1,16 +1,16 @@
 "use client";
 
 import { animate, motion, PanInfo, useMotionValue } from "motion/react";
-import { useEffect, useMemo, useRef, useState, useLayoutEffect } from "react";
+import { useEffect, useMemo, useRef, useState, useLayoutEffect, useCallback } from "react";
 import { flushSync } from "react-dom";
-import type { ComponentType } from "react";
-import { cachePanel, getCachedPanel } from "../utils/panelCache";
+import { getCachedPanel } from "../utils/panelCache";
 import { useSheetUrlState } from "../hooks/useSheetUrlState";
 import { useSheetNavigation, determineTransition } from "../utils/navigation";
 import { useSheetHistory } from "../hooks/useSheetHistory";
 import type {} from "../types";
 import { SHEET_GESTURE_THRESHOLD } from "../constants";
 import { registry } from "../registry";
+import { usePanelLoader } from "../hooks/usePanelLoader";
 
 export function SheetPanelViewport() {
     const { panelPath, modalId } = useSheetUrlState();
@@ -25,53 +25,12 @@ export function SheetPanelViewport() {
 
     // Incoming bridge: render cached peek content inside the push-in wrapper until the real panel is ready
     const [incomingBridgeNode, setIncomingBridgeNode] = useState<React.ReactNode | null>(null);
-    // Dynamically import and render the current panel component from registry
-    type Loaded = { key: string; Comp: ComponentType<unknown> } | null;
-    const [loaded, setLoaded] = useState<Loaded>(null);
-    useEffect(() => {
-        let cancelled = false;
-        // start fresh for new path so stale Comp never renders for a new panelPath
-        setLoaded((prev) => (prev?.key === (panelPath ?? "") ? prev : null));
-        if (!modalId || panelPath == null) return;
-        const def = registry[modalId]?.[panelPath];
-        if (!def) return;
-        def.import()
-            .then((m) => {
-                if (!cancelled)
-                    setLoaded({ key: panelPath, Comp: m.default as ComponentType<unknown> });
-            })
-            .catch(() => {
-                if (!cancelled) setLoaded(null);
-            });
-        return () => {
-            cancelled = true;
-        };
-    }, [modalId, panelPath]);
-
-    // Helper: is currentNode a real Comp (not fallback)
-    const currentNode = useMemo(() => {
-        if (loaded && panelPath != null && loaded.key === panelPath) {
-            const C = loaded.Comp;
-            return <C />;
-        }
-        // While a bridge is animating, suppress fallback to avoid any flash of previous content
-        if (incomingBridgeNode) return null;
-        // fallback until component loads
-        const def = modalId && panelPath != null ? registry[modalId]?.[panelPath] : undefined;
-        if (def?.fallback) return def.fallback as React.ReactNode;
-        return null;
-    }, [loaded, modalId, panelPath, incomingBridgeNode]);
-
-    // Helper: is currentNode a real Comp (not fallback)
-    const isCurrentNodeRealComp = useMemo(() => {
-        return !!(loaded && panelPath != null && loaded.key === panelPath);
-    }, [loaded, panelPath]);
-
-    // Cache only after the real component is loaded (avoid caching skeleton for peeks)
-    useEffect(() => {
-        if (panelPath == null || !loaded || loaded.key !== panelPath || !currentNode) return;
-        cachePanel(panelPath, currentNode);
-    }, [panelPath, loaded, currentNode]);
+    // Current panel loader (suppresses fallback while bridge is active)
+    const { currentNode, isCurrentNodeRealComp } = usePanelLoader(
+        modalId ?? null,
+        panelPath,
+        !!incomingBridgeNode
+    );
 
     // History-driven prev/next candidates (equivalent to Back/Forward buttons)
     const prevPath = useMemo(() => {
@@ -273,12 +232,71 @@ export function SheetPanelViewport() {
         return unsub;
     }, [x, w]);
 
+    // Debug helper
+    const DEBUG = false;
+    const debugRef = useRef(DEBUG);
+    const debugLog = useCallback((...args: unknown[]) => {
+        if (debugRef.current) console.log(...args);
+    }, []);
+
     // Drag end commit
     const DIST = useMemo(() => Math.max(60, 0.22 * (width || 0)), [width]);
     const VEL = SHEET_GESTURE_THRESHOLD.horizontalVelocity;
+    // Shared commit executor (forward/back)
+    const commitSwipe = (
+        direction: "forward" | "back",
+        cur: number,
+        ctx: { prevPath: string | null; nextPath: string | null }
+    ) => {
+        skipNextProgramAnimRef.current = true;
+        const snapshot = (panelPath != null ? getCachedPanel(panelPath) : null) ?? currentNode;
+        if (snapshot) {
+            setOutgoingNode(snapshot);
+            progOutOpacity.set(1);
+            progOutX.set(cur);
+        }
+        const ww = w.get();
+        const startX = direction === "forward" ? cur + ww : cur - ww;
+        const targetPath = direction === "forward" ? ctx.nextPath! : ctx.prevPath!;
+        const peekSnapshot = getCachedPanel(targetPath);
+        flushSync(() => {
+            commitTargetPathRef.current = targetPath;
+            setSuppressCenterPrev(true);
+            setFrozenPeeks({
+                prev: ctx.prevPath != null ? (getCachedPanel(ctx.prevPath) ?? null) : null,
+                next: ctx.nextPath != null ? (getCachedPanel(ctx.nextPath) ?? null) : null,
+            });
+            frozenPrevPathRef.current = ctx.prevPath;
+            frozenNextPathRef.current = ctx.nextPath;
+            setUseFrozenPeeks(true);
+            setIncomingBridgeNode(peekSnapshot ?? null);
+            progInX.set(startX);
+        });
+        animate(progInX, 0, {
+            type: "tween",
+            duration: Math.min(Math.max(Math.abs(startX) / 1200, 0.14), 0.26),
+            ease: [0.32, 0.72, 0, 1],
+        }).finished.catch(() => {});
+        if (direction === "forward") nav.goForward();
+        else nav.goBack();
+        x.set(0);
+        const outTarget = direction === "forward" ? -ww : ww;
+        const outCtrl = animate(progOutX, outTarget, {
+            type: "tween",
+            duration: Math.min(
+                Math.max(Math.abs(direction === "forward" ? cur + ww : ww - cur) / 1200, 0.14),
+                0.24
+            ),
+            ease: [0.32, 0.72, 0, 1],
+        });
+        outCtrl.finished.finally(() => {
+            setOutgoingNode(null);
+            progOutX.set(0);
+        });
+    };
     const onDragEnd = (_: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
         // Log swipe release timing and context
-        console.log("[SheetViewport] swipe released", {
+        debugLog("[SheetViewport] swipe released", {
             time: Date.now(),
             x: x.get(),
             velocityX: info.velocity.x,
@@ -292,95 +310,11 @@ export function SheetPanelViewport() {
         const v = info.velocity.x;
         // Commit: forward (left swipe)
         if ((cur <= -DIST || v < -VEL) && canDragLeft && nextPath != null) {
-            skipNextProgramAnimRef.current = true;
-            const snapshot = (panelPath != null ? getCachedPanel(panelPath) : null) ?? currentNode;
-            if (snapshot) {
-                setOutgoingNode(snapshot);
-                progOutOpacity.set(1);
-                progOutX.set(cur);
-            }
-            // From this point, synchronously prepare bridge and suppress previous center before next paint
-            const ww = w.get();
-            const startX = cur + ww; // next peek at release was x + w
-            const nextPeekSnapshot = getCachedPanel(nextPath);
-            flushSync(() => {
-                commitTargetPathRef.current = nextPath;
-                setSuppressCenterPrev(true);
-                setFrozenPeeks({
-                    prev: prevPath != null ? (getCachedPanel(prevPath) ?? null) : null,
-                    next: nextPath != null ? (getCachedPanel(nextPath) ?? null) : null,
-                });
-                frozenPrevPathRef.current = prevPath;
-                frozenNextPathRef.current = nextPath;
-                setUseFrozenPeeks(true);
-                setIncomingBridgeNode(nextPeekSnapshot ?? null);
-                progInX.set(startX);
-            });
-            // Prepare and animate incoming using cached next peek as a bridge BEFORE switching URL
-            animate(progInX, 0, {
-                type: "tween",
-                duration: Math.min(Math.max(Math.abs(startX) / 1200, 0.14), 0.26),
-                ease: [0.32, 0.72, 0, 1],
-            }).finished.catch(() => {});
-            // Now switch URL/state so the next panel starts loading, while bridge keeps animating
-            nav.goForward();
-            // Reset main container to center to show incoming as soon as it resolves
-            x.set(0);
-            // Slide the outgoing overlay off-screen
-            const outCtrl = animate(progOutX, -ww, {
-                type: "tween",
-                duration: Math.min(Math.max(Math.abs(cur + ww) / 1200, 0.14), 0.24),
-                ease: [0.32, 0.72, 0, 1],
-            });
-            outCtrl.finished.finally(() => {
-                setOutgoingNode(null);
-                progOutX.set(0);
-            });
+            commitSwipe("forward", cur, { prevPath, nextPath });
         }
         // Commit: back (right swipe)
         else if ((cur >= DIST || v > VEL) && canDragRight && prevPath != null) {
-            skipNextProgramAnimRef.current = true;
-            const snapshot = (panelPath != null ? getCachedPanel(panelPath) : null) ?? currentNode;
-            if (snapshot) {
-                setOutgoingNode(snapshot);
-                progOutOpacity.set(1);
-                progOutX.set(cur);
-            }
-            // From this point, synchronously prepare bridge and suppress previous center before next paint
-            const ww = w.get();
-            const startX = cur - ww; // prev peek at release was x - w
-            const prevPeekSnapshot = getCachedPanel(prevPath);
-            flushSync(() => {
-                commitTargetPathRef.current = prevPath;
-                setSuppressCenterPrev(true);
-                setFrozenPeeks({
-                    prev: prevPath != null ? (getCachedPanel(prevPath) ?? null) : null,
-                    next: nextPath != null ? (getCachedPanel(nextPath) ?? null) : null,
-                });
-                frozenPrevPathRef.current = prevPath;
-                frozenNextPathRef.current = nextPath;
-                setUseFrozenPeeks(true);
-                setIncomingBridgeNode(prevPeekSnapshot ?? null);
-                progInX.set(startX);
-            });
-            // Prepare and animate incoming using cached prev peek as a bridge BEFORE switching URL
-            animate(progInX, 0, {
-                type: "tween",
-                duration: Math.min(Math.max(Math.abs(startX) / 1200, 0.14), 0.26),
-                ease: [0.32, 0.72, 0, 1],
-            }).finished.catch(() => {});
-            // Now switch URL/state while the bridge continues
-            nav.goBack();
-            x.set(0);
-            const outCtrl = animate(progOutX, ww, {
-                type: "tween",
-                duration: Math.min(Math.max(Math.abs(ww - cur) / 1200, 0.14), 0.24),
-                ease: [0.32, 0.72, 0, 1],
-            });
-            outCtrl.finished.finally(() => {
-                setOutgoingNode(null);
-                progOutX.set(0);
-            });
+            commitSwipe("back", cur, { prevPath, nextPath });
         } else {
             animTo(0).finished.then(() => x.set(0));
         }
@@ -442,14 +376,14 @@ export function SheetPanelViewport() {
     // Log when the center render phase changes
     useEffect(() => {
         if (lastCenterKeyRef.current !== centerRenderKey) {
-            console.log("[SheetViewport] center switched", {
+            debugLog("[SheetViewport] center switched", {
                 center: centerRenderKey,
                 panelPath,
                 time: Date.now(),
             });
             lastCenterKeyRef.current = centerRenderKey;
         }
-    }, [centerRenderKey, panelPath]);
+    }, [centerRenderKey, panelPath, debugLog]);
 
     // Peek change logging keys
     const backPeekKey = useMemo(() => {
@@ -466,22 +400,22 @@ export function SheetPanelViewport() {
     const lastForwardPeekKeyRef = useRef<string | null>(null);
     useEffect(() => {
         if (lastBackPeekKeyRef.current !== backPeekKey) {
-            console.log("[SheetViewport] prev peek switched", {
+            debugLog("[SheetViewport] prev peek switched", {
                 key: backPeekKey,
                 time: Date.now(),
             });
             lastBackPeekKeyRef.current = backPeekKey;
         }
-    }, [backPeekKey]);
+    }, [backPeekKey, debugLog]);
     useEffect(() => {
         if (lastForwardPeekKeyRef.current !== forwardPeekKey) {
-            console.log("[SheetViewport] next peek switched", {
+            debugLog("[SheetViewport] next peek switched", {
                 key: forwardPeekKey,
                 time: Date.now(),
             });
             lastForwardPeekKeyRef.current = forwardPeekKey;
         }
-    }, [forwardPeekKey]);
+    }, [forwardPeekKey, debugLog]);
 
     return (
         <div
