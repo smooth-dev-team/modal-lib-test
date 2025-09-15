@@ -4,6 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { useSheetUrlState } from "../hooks/useSheetUrlState";
 import { useSheetNavigation } from "../utils/navigation";
 import { SheetPanelViewport } from "./SheetPanelViewport";
+import { SHEET_ANIMATION } from "../constants";
 import {
     AnimatePresence,
     motion,
@@ -31,11 +32,9 @@ export function SheetRoot() {
     // Esc to close (active only when sheet is open)
     const closeWithAnim = useCallback(() => {
         const target = sheetHeightRef.current || 480;
-        return animate(y, target, {
-            type: "tween",
-            duration: 0.2,
-            ease: [0.22, 1, 0.36, 1],
-        }).finished.then(() => nav.closeSheet({ hard: true }));
+        return animate(y, target, SHEET_ANIMATION.close).finished.then(() =>
+            nav.closeSheet({ hard: true })
+        );
     }, [nav, y]);
 
     useEffect(() => {
@@ -120,7 +119,7 @@ export function SheetRoot() {
         measure();
         y.set(sheetHeightRef.current);
         requestAnimationFrame(() => {
-            animate(y, 0, { type: "tween", duration: 0.22, ease: [0.22, 1, 0.36, 1] });
+            animate(y, 0, SHEET_ANIMATION.open);
         });
         let ro: ResizeObserver | undefined;
         if (typeof ResizeObserver !== "undefined" && el) {
@@ -147,7 +146,7 @@ export function SheetRoot() {
         if (current >= threshold) {
             void closeWithAnim();
         } else {
-            animate(y, 0, { type: "tween", duration: 0.18, ease: [0.22, 1, 0.36, 1] });
+            animate(y, 0, SHEET_ANIMATION.snapBack);
         }
     }, [y, closeWithAnim]);
 
