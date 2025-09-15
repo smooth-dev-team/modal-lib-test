@@ -184,7 +184,6 @@ export function SheetRoot() {
                             background: "#fff",
                             borderTopLeftRadius: 24,
                             borderTopRightRadius: 24,
-                            maxHeight: "86vh",
                             padding: 16,
                             y,
                             paddingBottom: "env(safe-area-inset-bottom)",
@@ -198,16 +197,7 @@ export function SheetRoot() {
                         onDrag={onDrag}
                         onDragEnd={onDragEnd}
                         onClick={(e) => e.stopPropagation()}>
-                        {/* <div
-                            style={{
-                                display: "flex",
-                                justifyContent: "space-between",
-                                alignItems: "center",
-                            }}>
-                            <div style={{ fontWeight: 600 }}>Sheet</div>
-                            <button onClick={() => void closeWithAnim()}>Close</button>
-                        </div> */}
-                        <div style={{ marginTop: 12, height: "40dvh" }}>
+                        <div style={{ marginTop: 12, height: "93dvh" }}>
                             <SheetPanelViewport />
                         </div>
                     </motion.div>

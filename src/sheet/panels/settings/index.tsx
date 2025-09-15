@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import { useSheetUrlState } from "@/sheet/hooks/useSheetUrlState";
 
 type Todo = {
     userId: number;
@@ -13,6 +14,7 @@ export default function SettingsRoot() {
     const [data, setData] = useState<Todo | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const { setModalPanel } = useSheetUrlState();
 
     useEffect(() => {
         const ac = new AbortController();
@@ -32,8 +34,22 @@ export default function SettingsRoot() {
     }, []);
 
     return (
-        <div style={{ padding: 12, display: "grid", gap: 12 }}>
+        <div
+            style={{
+                padding: 12,
+                gap: 12,
+                height: "100%",
+                border: "1px solid #ddd",
+                borderRadius: 8,
+                boxSizing: "border-box",
+                display: "flex",
+                flexDirection: "column",
+                overflowY: "auto",
+            }}>
             <div style={{ fontWeight: 600, fontSize: 16 }}>Settings (root)</div>
+            <div>
+                <button onClick={() => setModalPanel("settings", "/a")}>Go to /a (push)</button>
+            </div>
 
             {loading && (
                 <div
