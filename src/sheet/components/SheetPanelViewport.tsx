@@ -128,6 +128,15 @@ export function SheetPanelViewport() {
     // Track center render phase for logging
     const lastCenterKeyRef = useRef<string | null>(null);
 
+    // Clear any leftover transient state (bridge/suppression/frozen peeks)
+    const resetTransientState = useCallback(() => {
+        setIncomingBridgeNode(null);
+        setUseFrozenPeeks(false);
+        setFrozenPeeks(null);
+        setSuppressCenterPrev(false);
+        commitTargetPathRef.current = null;
+    }, []);
+
     // Reset x when key changes
     useLayoutEffect(() => {
         animRef.current?.stop?.();
@@ -150,6 +159,8 @@ export function SheetPanelViewport() {
             prevPathRef.current = next;
             return;
         }
+        // Ensure no lingering swipe transient state bleeds into programmatic transition
+        resetTransientState();
         const kind = determineTransition(prev, next);
         const outNode = getCachedPanel(prev);
         if (kind === "forward" || kind === "back") {
@@ -205,7 +216,7 @@ export function SheetPanelViewport() {
             setOutgoingNode(null);
         }
         prevPathRef.current = next;
-    }, [panelPath, w, progInX, progOutX, progInOpacity, progOutOpacity]);
+    }, [panelPath, w, progInX, progOutX, progInOpacity, progOutOpacity, resetTransientState]);
 
     // Clamp when no candidate or out-of-range
     useLayoutEffect(() => {
