@@ -3,7 +3,7 @@
 import { animate, motion, PanInfo, useMotionValue } from "motion/react";
 import { useEffect, useMemo, useRef, useState, useLayoutEffect, useCallback } from "react";
 import { flushSync } from "react-dom";
-import { getCachedPanel } from "../utils/panelCache";
+import { getCachedPanel, cachePanel } from "../utils/panelCache";
 import { useSheetUrlState } from "../hooks/useSheetUrlState";
 import { useSheetNavigation, determineTransition } from "../utils/navigation";
 import { useSheetHistory } from "../hooks/useSheetHistory";
@@ -18,6 +18,20 @@ import { usePanelLoader } from "../hooks/usePanelLoader";
 
 export function SheetPanelViewport() {
     const { panelPath, modalId } = useSheetUrlState();
+    // Resolve a peek node for a given path: prefer cached real panel, else fallback
+    const getPeekNode = useCallback(
+        (path: string | null | undefined): React.ReactNode | null => {
+            if (path == null) return null; // allow "" (root)
+            const cached = getCachedPanel(path);
+            if (cached) return cached;
+            if (modalId) {
+                const def = registry[modalId]?.[path];
+                if (def?.fallback) return def.fallback as React.ReactNode;
+            }
+            return null;
+        },
+        [modalId]
+    );
     const nav = useSheetNavigation(modalId ?? undefined);
     const {
         history: h,
@@ -303,20 +317,45 @@ export function SheetPanelViewport() {
             setOutgoingNode(snapshot);
             progOutOpacity.set(1);
             progOutX.set(cur);
+            // Preserve outgoing panel snapshot in cache to serve as immediate peek after commit
+            if (panelPath != null) {
+                try {
+                    cachePanel(panelPath, snapshot);
+                } catch {}
+            }
         }
         const ww = w.get();
         const startX = direction === "forward" ? cur + ww : cur - ww;
         const targetPath = direction === "forward" ? ctx.nextPath! : ctx.prevPath!;
-        const peekSnapshot = getCachedPanel(targetPath);
+        const peekSnapshot = getPeekNode(targetPath);
         flushSync(() => {
             commitTargetPathRef.current = targetPath;
             setSuppressCenterPrev(true);
-            setFrozenPeeks({
-                prev: ctx.prevPath != null ? (getCachedPanel(ctx.prevPath) ?? null) : null,
-                next: ctx.nextPath != null ? (getCachedPanel(ctx.nextPath) ?? null) : null,
-            });
-            frozenPrevPathRef.current = ctx.prevPath;
-            frozenNextPathRef.current = ctx.nextPath;
+            // Predict the peeks for the POST-COMMIT state so visuals match immediately after landing.
+            const curIdx = h?.cursor ?? -1;
+            const stack = h?.stack ?? [];
+            let newPrevPath: string | null = null;
+            let newNextPath: string | null = null;
+            if (direction === "back") {
+                // After going back: prev becomes stack[cursor-2] (if any), next becomes the outgoing panel
+                newPrevPath = curIdx - 2 >= 0 ? stack[curIdx - 2] : null;
+                newNextPath = panelPath ?? null;
+            } else {
+                // After going forward: prev becomes the outgoing panel, next becomes stack[cursor+2] (if any)
+                newPrevPath = panelPath ?? null;
+                newNextPath = curIdx + 2 < stack.length ? stack[curIdx + 2] : null;
+            }
+            // Prefer the live snapshot for the peek that corresponds to the outgoing panel.
+            // This guarantees a non-blank peek even if cache/fallback misses.
+            const predictedPrev = newPrevPath != null ? getPeekNode(newPrevPath) : null;
+            const predictedNext = newNextPath != null ? getPeekNode(newNextPath) : null;
+            setFrozenPeeks(
+                direction === "back"
+                    ? { prev: predictedPrev, next: snapshot ?? predictedNext }
+                    : { prev: snapshot ?? predictedPrev, next: predictedNext }
+            );
+            frozenPrevPathRef.current = newPrevPath;
+            frozenNextPathRef.current = newNextPath;
             setUseFrozenPeeks(true);
             setIncomingBridgeNode(peekSnapshot ?? null);
             progInX.set(startX);
@@ -422,14 +461,48 @@ export function SheetPanelViewport() {
         }
     }, [suppressCenterPrev, panelPath, isCurrentNodeRealComp]);
 
-    const derivedBackPeekNode = prevPath != null ? getCachedPanel(prevPath) : null;
-    const derivedForwardPeekNode = nextPath != null ? getCachedPanel(nextPath) : null;
+    const derivedBackPeekNode = prevPath != null ? getPeekNode(prevPath) : null;
+    const derivedForwardPeekNode = nextPath != null ? getPeekNode(nextPath) : null;
     const backPeekNode = useFrozenPeeks && frozenPeeks ? frozenPeeks.prev : derivedBackPeekNode;
     const forwardPeekNode =
         useFrozenPeeks && frozenPeeks ? frozenPeeks.next : derivedForwardPeekNode;
     // Allow drag based solely on history availability; peek nodes are optional for visuals
     const canDragRight = !!canBack;
     const canDragLeft = !!canFwd;
+
+    // Prefetch neighbor panels for peeks if not cached yet
+    useEffect(() => {
+        const m = modalId;
+        if (!m) return;
+        const prefetch = (path: string | null) => {
+            if (!path) return;
+            if (getCachedPanel(path)) return;
+            const def = registry[m]?.[path];
+            if (!def?.import) return;
+            const schedule = (fn: () => void) => {
+                const w = window as unknown as {
+                    requestIdleCallback?: (cb: () => void, opts?: { timeout?: number }) => void;
+                };
+                if (typeof w.requestIdleCallback === "function") {
+                    w.requestIdleCallback(fn, { timeout: 200 });
+                } else {
+                    setTimeout(fn, 50);
+                }
+            };
+            schedule(() => {
+                def.import()
+                    .then((mod: { default: React.ComponentType<unknown> }) => {
+                        try {
+                            const El = mod.default;
+                            cachePanel(path, <El />);
+                        } catch {}
+                    })
+                    .catch(() => {});
+            });
+        };
+        prefetch(nextPath);
+        prefetch(prevPath);
+    }, [modalId, nextPath, prevPath]);
 
     // Compose a key representing what the center is currently rendering (for logging)
     const centerRenderKey = useMemo(() => {
@@ -503,6 +576,7 @@ export function SheetPanelViewport() {
                     backfaceVisibility: "hidden",
                     transform: "translateZ(0)",
                 }}
+                id='current-panel'
                 drag='x'
                 dragMomentum={false}
                 dragElastic={0}
@@ -536,6 +610,7 @@ export function SheetPanelViewport() {
             {backPeekNode && (
                 <motion.div
                     aria-hidden
+                    id='prev-peek'
                     style={{
                         position: "absolute",
                         inset: 0,
@@ -554,6 +629,7 @@ export function SheetPanelViewport() {
             {forwardPeekNode && (
                 <motion.div
                     aria-hidden
+                    id='next-peek'
                     style={{
                         position: "absolute",
                         inset: 0,
